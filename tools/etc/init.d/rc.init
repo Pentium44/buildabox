@@ -1,0 +1,52 @@
+#!/bin/sh
+# ^^ Its actually bash ;)
+# Nutra startup file!
+
+. /etc/conf.d/status
+. /etc/conf.d/nutra.conf
+. /etc/conf.d/static_network.conf
+
+# clear
+clear
+
+# Welcome message!
+echo "Welcome to Nutra Linux!"
+
+# mount proc on boot
+echo -n "Mounting proc..."
+mount proc > /dev/null 
+status
+
+# Remount rootfs with read and write
+echo -n "Remounting rootfs... "
+/bin/mount -o remount,rw / > /dev/null
+status
+
+# Set hostname
+echo -n "Setting hostname... "
+/bin/hostname -F /etc/hostname > /dev/null
+status
+
+# Configure network loopback
+echo -n "Configuring network loopback... "
+/sbin/ifconfig lo 127.0.0.1 up
+/sbin/route add 127.0.0.1 lo
+status
+
+# Start network
+if [ "$NETTYPE" = "dynamic" ] ; then
+  echo -n "Starting UDHCPC... "
+  /sbin/udhcpc -b -i $NETINTERFACE -p /var/run/udhcpc.$NETINTERFACE.pid > /dev/null
+  status
+else
+  echo -n "Static IP set, starting $IP on $NETINTERFACE... "
+  /sbin/ifconfig $NETINTERFACE $IP netmask $MASK up
+  /sbin/route add default gateway $GATEWAY
+  echo -n "nameserver $DNS_SERVER" > /etc/resolv.conf
+fi
+
+# clear screen before getty is enabled
+clear
+
+# Show login prompt
+getty 9600 tty1

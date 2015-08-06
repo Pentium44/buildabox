@@ -1,0 +1,24 @@
+#!/bin/bash
+# gzip and make iso
+
+ARCHIVE="bust.tgz"
+
+# create initramfs
+echo "Compressing Nutra Core.."
+cd base
+find | cpio -o -H newc | gzip -9 > nutra.gz
+mv nutra.gz ../iso/data
+cd ..
+
+#echo "Compressing libraries, programs, and shared files..."
+# compress libraries
+#cd libs
+#tar -czf $ARCHIVE *
+#mv $ARCHIVE ../iso
+#cd ..
+
+echo "Creating iso..."
+# make the iso
+mkisofs -o $1 -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table iso
+
+echo "Done!!!"

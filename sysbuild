@@ -1,0 +1,108 @@
+#!/bin/bash
+# Build simple linux base system.
+# (C) Chris Dorman, 2015 - GPLv3+
+
+kernel="linux-4.1.4.tar.gz"
+syslinux="syslinux-6.03.tar.gz"
+busybox="busybox-1.23.2.tar.bz2"
+
+kerneldir=${kernel//.tar.gz}
+busyboxdir=${busybox//.tar.bz2}
+
+NORMAL="\e[0m"
+RED="\e[0;31m"
+GREEN="\e[0;32m"
+BLUE="\e[0;34m"
+YELLOW="\e[1;33m"
+MAGENTA="\e[0;35m"
+CYAN="\e[0;36m"
+
+status()
+{
+  local CHECK=$?
+    echo -en "\033[68G"
+    if [ $CHECK = 0 ] ; then
+      echo -e "[ \e[0;32mOK\e[0m ]"
+    else
+      echo -e "[ \e[0;31mFAILED\e[0m ]"
+      exit 1
+    fi
+}
+
+if [ ! -d src ]; then
+  mkdir src
+fi
+
+cd src
+
+echo -e "[$YELLOW Working $NORMAL] Downloading Linux kernel"
+if [ ! -f $kernel ]; then
+  wget https://www.kernel.org/pub/linux/kernel/v4.x/$kernel > /dev/null 2>&1
+fi
+status
+
+echo -e "[$YELLOW Working $NORMAL] Downloading base utilities"
+if [ ! -f $busybox ]; then
+  wget http://busybox.net/downloads/$busybox > /dev/null 2>&1
+fi
+status
+
+echo -e "[$YELLOW Working $NORMAL] Downloading bootloader"
+if [ ! -f $syslinux ]; then
+wget https://www.kernel.org/pub/linux/utils/boot/syslinux/$syslinux > /dev/null 2>&1
+fi
+status
+
+echo -e "[$YELLOW Working $NORMAL] Unpacking Linux kernel"
+if [ ! -d $kerneldir ]; then
+  tar -xzf $kernel > /dev/null 2>&1
+  status
+fi
+
+echo -e "[$YELLOW Working $NORMAL] Configuring Linux kernel"
+cd $kerneldir
+#cp ../../kernel-4.1.4-standard.conf .config
+status
+
+echo -e "[$YELLOW Working $NORMAL] Building Linux kernel"
+#make bzImage -j5
+status
+
+echo -e "[$YELLOW Working $NORMAL] Building kernel modules"
+#make modules -j5
+status
+#make INSTALL_MOD_PATH=`pwd`/_pkg modules_install
+
+cd ..
+
+echo -e "[$YELLOW Working $NORMAL] Unpacking & building root system"
+if [ ! -d $busyboxdir ]; then
+  echo "Unpacking..."
+  tar -xjf $busybox > /dev/null 2>&1
+  status
+fi
+
+echo "Configuring..."
+cd $busyboxdir
+cp ../../$busyboxdir.conf .config
+status
+
+echo "Building..."
+make -j5
+status
+
+echo "Installing..."
+mkdir ../rootfs
+make install
+status
+echo "Finishing up..."
+chmod 4755 _install/bin/busybox
+cp -a _install/* ../rootfs
+status
+
+echo -e "[$YELLOW Working $NORMAL] Configuring root filesystem"
+echo "Linking init..."
+cd ../rootfs
+ln -s bin/busybox init
+status
+

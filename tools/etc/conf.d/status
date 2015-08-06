@@ -1,0 +1,23 @@
+status_serious()
+{
+  local CHECK=$?
+    echo -en "\033[68G"
+    if [ $CHECK = 0 ] ; then
+      echo -e "[ \e[0;32mOK\e[0m ]"
+    else
+      echo -e "[ \e[0;31mFAILED\e[0m ]"
+      exit 1
+    fi
+}
+
+status()
+{
+  local CHECK=$?
+    echo -en "\033[68G"
+    if [ $CHECK = 0 ] ; then
+      echo -e "[ \e[0;32mOK\e[0m ]"
+    else
+      echo -e "[ \e[0;31mFAILED\e[0m ]"
+      echo "Errors where found."
+    fi
+}

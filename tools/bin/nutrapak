@@ -1,0 +1,156 @@
+#!/bin/sh
+# NutraPak - Nutra Linux package manager
+
+# Include nutra linux's config
+. /etc/conf.d/nutra.conf
+. /etc/conf.d/status
+
+# Nutrapak root
+NUTRAPAKROOT="/usr/share/nutrapak"
+# Package list
+PKGLIST="/usr/share/nutrapak/package.list"
+# Package list name (could change in the future)
+PKGLISTNAME="package.list"
+# Mirror file
+MIRRORFILE="/usr/share/nutrapak/mirror.txt"
+# Dependencies path
+DEPPATH="/usr/share/nutrapak/deps"
+# Temp path
+TMPPATH="/tmp/nutrapak"
+# Installed package dir
+INSTALLEDPKG="/usr/share/nutrapak/installed"
+
+
+if [ $(id -u) != "0" ]; then
+	echo "Error: must be root to operate this command."
+	exit 1
+fi
+
+case $1 in
+	get-install ) 
+		echo ""
+		# check package list
+		if [ ! -s $PKGLIST ]; then
+			rm $PKGLIST
+			echo "Getting package list... "
+			wget $(cat $MIRRORFILE)/$NUTRAVERSION/$PKGLISTNAME -P $NUTRAPAKROOT
+		fi
+		
+		# check if package is already installed
+		if [ -f "$INSTALLEDPKG/$2" ]; then
+			echo "${2} is already installed."
+			exit 0
+		fi
+		
+		# Check to see if package exists, if so download
+		echo "Checking ${2}'s existence... "
+		if grep "$2" $PKGLIST > /dev/null
+		then
+			echo ""
+			echo "Downloading ${2}..."
+			wget $(cat $MIRRORFILE)/$NUTRAVERSION/$2.npak -P $DEPPATH
+		else
+			echo "${2} was not found in repository."
+			exit 1
+		fi
+		
+		echo -n "Extracting package to tmp... "
+		mv $DEPPATH/$2.npak $DEPPATH/$2.tar.gz
+		mkdir $TMPPATH/$2
+		gunzip $DEPPATH/$2.tar.gz
+		tar -xf $DEPPATH/$2.tar -C $TMPPATH/$2
+		status_serious
+		
+		# Examine dependencies for package
+		if [ -f "$TMPPATH/$2/deps" ]; then
+			i=1
+			echo ""
+			echo "++++++++++++++++++++++++++++++++++++++++"
+			echo "Examining dependencies... "
+			echo "++++++++++++++++++++++++++++++++++++++++"
+			while read line; do
+				if [ -f "$INSTALLEDPKG/$line" ]; then
+					echo "$i: $line - INSTALLED"
+				else
+					echo "$i: $line"
+				fi
+				((i++))
+			done < $TMPPATH/$2/deps
+			echo "++++++++++++++++++++++++++++++++++++++++"
+			echo "Installing dependencies..."
+			echo "++++++++++++++++++++++++++++++++++++++++"
+			while read line; do
+				if [ -f "$INSTALLEDPKG/$line" ]; then
+					echo "${line} already installed"
+				else
+					echo "Installing ${line} for ${2}"
+					nutrapak get-install $line
+				fi
+			done < $TMPPATH/$2/deps
+			echo "++++++++++++++++++++++++++++++++++++++++"
+			
+		fi
+		
+		echo -n "Installing ${2}..."
+		if [ -f "$TMPPATH/$2/deps" ]; then
+			rm $TMPPATH/$2/deps
+		fi
+		
+		cp -a $TMPPATH/$2/* /
+		status_serious
+		
+		if [ -f "$TMPPATH/$2/execute.sh" ]; then
+			echo "Running ${2}'s execution script..."
+			$TMPPATH/$2/execute.sh
+		fi
+		
+		if [ -f "/execute.sh" ]; then
+			rm /execute.sh
+		fi
+		
+		echo -n "Cleaning up..."
+		rm -r $TMPPATH/$2
+		rm $DEPPATH/$2.tar
+		status
+		
+		echo -n "Marking ${2} in the installation database..."
+		touch $INSTALLEDPKG/$2
+		status
+		
+		echo "${2} Installed!"
+		echo ""
+		;;
+	
+	update-list )
+		if [ -f $PKGLIST ]; then
+			rm $PKGLIST
+		fi
+		
+		echo "Getting package list... "
+		wget $(cat $MIRRORFILE)/$NUTRAVERSION/$PKGLISTNAME -P $NUTRAPAKROOT
+		status_serious
+		;;
+		
+	search )
+		if [ ! -s $PKGLIST ]; then
+			rm $PKGLIST
+			echo "Getting package list... "
+			wget $(cat $MIRRORFILE)/$NUTRAVERSION/$PKGLISTNAME -P $NUTRAPAKROOT
+			status_serious
+		fi
+		
+		echo "Searching results..."
+		echo "++++++++++++++++++++++++++++++++++++++++"
+		grep -i "$2" $PKGLIST
+		echo "++++++++++++++++++++++++++++++++++++++++"
+		
+		;;
+
+	* )
+		echo "Usage: 	
+nutrapak get-install <package>
+nutrapak update-list
+		"
+		;;
+
+esac
