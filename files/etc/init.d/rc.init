@@ -1,16 +1,28 @@
 #!/bin/sh
-# ^^ Its actually bash ;)
-# Nutra startup file!
 
 . /etc/conf.d/status
-. /etc/conf.d/nutra.conf
+. /etc/conf.d/main.conf
 . /etc/conf.d/static_network.conf
 
 # clear
 clear
 
 # Welcome message!
-echo "Welcome to Nutra Linux!"
+echo "Welcome to a Generic Linux Build!"
+
+echo -n "Checking some local paths..."
+
+# Check if mtab is linked to mounts
+if [ ! -L /etc/mtab ]; then
+  ln -s /proc/mounts /etc/mtab
+fi
+
+# Check to see if keymap exists
+if [ ! -f /usr/share/kmap/$KMAP.kmap ]; then
+  /bin/busybox dumpkmap /usr/share/kmap/$KMAP.kmap
+fi
+
+status
 
 # mount proc on boot
 echo -n "Mounting proc..."
@@ -44,6 +56,10 @@ else
   /sbin/route add default gateway $GATEWAY
   echo -n "nameserver $DNS_SERVER" > /etc/resolv.conf
 fi
+
+echo -n "Loading Keymap..."
+/sbin/loadkmap < /usr/share/kmap/$KMAP.kmap
+status
 
 # clear screen before getty is enabled
 clear

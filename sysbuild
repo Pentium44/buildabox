@@ -1,14 +1,29 @@
 #!/bin/bash
-# Build simple linux base system.
+# Build linux system and generate ISO
 # (C) Chris Dorman, 2015 - GPLv3+
 
+# Download mirrors
+syslinuxmirror="https://www.kernel.org/pub/linux/utils/boot/syslinux"
+kernelmirror="https://www.kernel.org/pub/linux/kernel/v4.x"
+busyboxmirror="http://busybox.net/downloads"
+libcmirror="http://ftp.gnu.org/gnu/libc"
+
+# endtag used for iso filename, and some rootfs configs
+endtag=`date +"%Y%m%d-%H%M"`
+
+# Source code filenames
 kernel="linux-4.1.4.tar.gz"
 syslinux="syslinux-6.03.tar.gz"
 busybox="busybox-1.23.2.tar.bz2"
+libc="glibc-2.22.tar.gz"
 
+# Source directory names
 kerneldir=${kernel//.tar.gz}
 busyboxdir=${busybox//.tar.bz2}
+syslinuxdir=${syslinux//.tar.gz}
+libcdir=${libc//.tar.gz}
 
+# Echo colors
 NORMAL="\e[0m"
 RED="\e[0;31m"
 GREEN="\e[0;32m"
@@ -17,6 +32,7 @@ YELLOW="\e[1;33m"
 MAGENTA="\e[0;35m"
 CYAN="\e[0;36m"
 
+# function to check if errors occurred
 status()
 {
   local CHECK=$?
@@ -29,80 +45,456 @@ status()
     fi
 }
 
+# same as above but doesn't output [ OK ]
+status_silent()
+{
+  local CHECK=$?
+    echo -en "\033[68G"
+    if [ $CHECK != 0 ] ; then
+      echo -e "[ \e[0;31mFAILED\e[0m ]"
+      exit 1
+    fi
+}
+
+# check to see if source dir exists, if not create
 if [ ! -d src ]; then
-  mkdir src
+	mkdir src
+	status_silent
 fi
 
+# if called, print everything instead of hiding. Debugging purposes
+case $1 in
+  --verbose|-v) verbose=1;;
+  *) verbose=0;
+esac
+
+# Download source code
+get_files()
+{
+  echo -e "[$YELLOW Working $NORMAL] Downloading needed files..."
+  if [ ! -f $kernel ]; then
+	echo -n "$kernel..."
+    wget $kernelmirror/$kernel > /dev/null 2>&1
+    status
+  fi 
+  
+  if [ ! -f $busybox ]; then
+    echo -n "$busybox..."
+    wget $busyboxmirror/$busybox > /dev/null 2>&1
+    status
+  fi
+  
+  if [ ! -f $syslinux ]; then
+    echo -n "$syslinux..."
+    wget $syslinuxmirror/$syslinux > /dev/null 2>&1
+    status
+  fi
+  
+  if [ ! -f $libc ]; then
+    echo -n "$libc..."
+    wget $libcmirror/$libc > /dev/null 2>&1
+    status
+  fi
+  
+}
+
+# Build linux kernel
+do_kernel()
+{
+
+  echo -e "[$YELLOW Working $NORMAL] Unpacking & building Linux kernel"
+  if [ ! -d $kerneldir ]; then
+    echo -n "Unpacking..."
+    tar -xzf $kernel > /dev/null 2>&1
+    status
+  fi
+
+  echo -n "Configuring..."
+  cd $kerneldir
+  cp ../../files/$kerneldir-standard.conf .config
+  status
+
+  echo -n "Building kernel base..."
+  if [ "$verbose" == "1" ]; then
+    make bzImage -j5
+    status
+  else
+    make bzImage -j5 > /dev/null 2>&1
+    status
+  fi
+
+  #echo -n "Building kernel modules..."
+  #if [ "$verbose" == "1" ]; then
+  #  make modules -j5
+  #  status
+  #else
+  #  make modules -j5 > /dev/null 2>&1
+  #  status
+  #fi
+  
+  #make INSTALL_MOD_PATH=`pwd`/_pkg modules_install
+  make INSTALL_HDR_PATH=`pwd`/_hdr headers_install > /dev/null 2>&1
+
+  cd ..
+
+}
+
+# Build busybox
+do_busybox()
+{
+
+  echo -e "[$YELLOW Working $NORMAL] Unpacking & building system utilities"
+  if [ ! -d $busyboxdir ]; then
+    echo -n "Unpacking..."
+    tar -xjf $busybox > /dev/null 2>&1
+    status
+  fi
+
+  echo -n "Configuring..."
+  cd $busyboxdir
+  cp ../../files/$busyboxdir.conf .config
+  status
+
+  echo -n "Building..."
+  if [ "$verbose" == "1" ]; then 
+    make -j5
+    status
+  else
+    make -j5 > /dev/null 2>&1
+    status
+  fi
+  
+  echo -n "Installing..."
+  if [ ! -d ../rootfs ]; then
+    mkdir ../rootfs
+  fi
+  
+  if [ "$verbose" == "1" ]; then
+    make install
+    status
+  else
+    make install > /dev/null 2>&1
+    status
+  fi
+  
+  echo -n "Finishing up..."
+  chmod 4755 _install/bin/busybox
+  cp -a _install/* ../rootfs
+  status
+  
+  cd ..
+}
+
+# Build system wide dependencies
+do_libc()
+{
+  echo -e "[$YELLOW Working $NORMAL] Configuring & building libc"
+  if [ ! -d $libcdir ]; then
+    echo "Unpacking..."
+    tar -xzf $libc > /dev/null 2>&1
+    status
+  fi 
+  
+  if [ ! -d $libcdir-build ]; then
+    mkdir $libcdir-build
+  fi
+  
+  if [ ! -d rootfs/lib ]; then
+    mkdir rootfs/lib
+  fi
+  
+  cd $libcdir-build
+  echo -n "Configuring..."
+  if [ "$verbose" == "1" ]; then
+	`pwd`/../$libcdir/configure \
+    --prefix=`pwd`/../rootfs \
+    --build=$MACHTYPE \
+    --host=x86_64-linux \
+    --target=x86_64-linux 
+    #--with-headers=../$kerneldir/_hdr/include
+    status
+  else
+    `pwd`/../$libcdir/configure \
+    --prefix=`pwd`/../rootfs \
+    --build=$MACHTYPE \
+    --host=x86_64-linux \
+    --target=x86_64-linux > /dev/null 2>&1
+    #--with-headers=../$kerneldir/_hdr/include > /dev/null 2>&1
+    status
+  fi
+  
+  echo -n "Building..."
+  if [ "$verbose" == "1" ]; then
+    make install-bootstrap-headers=yes install-headers
+    status
+    
+    make -j5 csu/subdir_lib
+    status
+    
+    install csu/crt1.o csu/crti.o csu/crtn.o `pwd`/../rootfs/lib
+    status
+    
+    gcc \
+	-nostdlib \
+	-nostartfiles -shared -x c /dev/null -o `pwd`/../rootfs/lib/libc.so
+    status
+    
+    make -j5 
+    status
+  else
+    make install-bootstrap-headers=yes install-headers > /dev/null 2>&1
+    status_silent
+    
+    make -j5 csu/subdir_lib > /dev/null 2>&1
+    status_silent
+    
+    install csu/crt1.o csu/crti.o csu/crtn.o `pwd`/../rootfs/lib > /dev/null 2>&1
+    status_silent
+    
+    gcc \
+	-nostdlib \
+	-nostartfiles -shared -x c /dev/null -o `pwd`/../rootfs/lib/libc.so 2>&1
+    status_silent
+    
+    make -j5 > /dev/null 2>&1
+    status
+  fi
+  
+  echo -n "Copying to rootfs..."
+  if [ "$verbose" == "1" ]; then
+    make install
+    status
+  else
+    make install > /dev/null 2>&1
+    status
+  fi
+  
+  echo -n "Cleaning files..."
+  #strip -v lib/* > /dev/null 2>&1
+  status
+  
+  cd ..
+}
+
+# Configure rootfs for live boot
+configure_system()
+{
+	
+  echo -e "[$YELLOW Working $NORMAL] Configuring root filesystem"
+  echo -n "Linking init..."
+  cd rootfs
+  if [ -f linuxrc ]; then
+    rm linuxrc
+  fi
+ 
+  if [ ! -f init ]; then
+    ln -s bin/busybox init
+  fi
+  status
+  
+  echo -n "Laying out filesystem tree..."
+  mkdir -p dev etc root home proc media mnt sys tmp var
+  mkdir -p usr/{lib,local,share,games} \
+   var/{cache,lib,lock,log,games,run,spool} \
+   media/{cdrom,flash,usbdisk}
+  
+  echo -n "Filling /dev..."
+  cp ../$busyboxdir/examples/bootfloppy/mkdevs.sh bin/mkdev
+  ./bin/mkdev dev > /dev/null 2>&1
+  status
+  
+  echo -n "Configuring networking..."
+  echo "127.0.0.1	localhost" > etc/hosts
+  echo "localhost	127.0.0.1" > etc/networks
+  echo "linux" > etc/hostname
+  echo "order hosts,bind" > etc/host.conf 
+  echo "multi on" >> etc/host.conf 
+  
+  echo "
+# /etc/nsswitch.conf: GNU Name Service Switch config.
+#
+
+passwd:     files
+group:      files
+shadow:     files
+
+hosts:      files dns
+networks:   files
+" > etc/nsswitch.conf 
+  status
+  
+  echo -n "Setting up default users and groups..."
+  echo "root:x:0:0:root:/root:/bin/sh" > etc/passwd
+  echo "root::13525:0:99999:7:::" > etc/shadow
+  echo "root:x:0:" > etc/group
+  echo "root:*::" > etc/gshadow
+  chmod 640 etc/shadow
+  chmod 640 etc/gshadow
+  status
+  
+  echo -n "Finishing up..."
+  echo "# /etc/securetty: List of terminals on which root is allowed to login.
+#
+console
+
+# For people with serial port consoles
+ttyS0
+
+# Standard consoles
+tty1
+tty2
+tty3
+tty4
+tty5
+tty6
+tty7" > etc/securetty
+
+  echo "/bin/sh" > etc/shells
+  echo "/bin/ash" >> etc/shells
+  
+  echo "Generic Linux $endtag \r \l" > etc/issue
+  echo "" >> etc/issue
+  
+  echo "Generic Linux distribution created by BuildScript..." > etc/motd
+
+  echo "[SUID]
+# Allow command to be run by anyone.
+su = ssx root.root
+passwd = ssx root.root
+loadkmap = ssx root.root
+mount = ssx root.root
+reboot = ssx root.root
+halt = ssx root.root" > etc/busybox.conf 
+
+  chmod 600 etc/busybox.conf 
+  
+  echo "::sysinit:/etc/init.d/rc.init
+::respawn:-/bin/sh
+tty2::askfirst:-/bin/sh
+::ctrlaltdel:/bin/umount -a -r
+::ctrlaltdel:/sbin/reboot" > etc/inittab
+
+  echo "# /etc/profile: system-wide .profile file for the Bourne shells
+
+PATH=\"/usr/sbin:/usr/bin:/sbin:/bin\"
+LD_LIBRARY_PATH=\"/usr/lib:/lib\"
+
+NORMAL=\"\\[\\e[0m\\]\"
+RED=\"\\[\\e[0;31m\\]\"
+GREEN=\"\\[\\e[0;32m\\]\"
+BLUE=\"\\[\\e[0;34m\\]\"
+YELLOW=\"\\[\\e[1;33m\\]\"
+MAGENTA=\"\\[\\e[0;35m\\]\"
+CYAN=\"\\[\\e[0;36m\\]\"
+
+if [ \"\`id -u\`\" -eq 0 ]; then
+  PS1=\"$RED\\u$GREEN@$BLUE\\h [ $MAGENTA\\w$BLUE ]# \$NORMAL\"
+else
+  PS1=\"$RED\\u$GREEN@$BLUE\\h [ $MAGENTA\\w$BLUE ]\\\$ \$NORMAL\"
+fi
+
+export PATH LD_LIBRARY_PATH PS1 DISPLAY ignoreeof
+umask 022
+
+export G_FILENAME_ENCODING=iso8859-1
+" > etc/profile
+
+  echo "proc            /proc        proc    defaults          0       0
+sysfs           /sys         sysfs   defaults          0       0
+devpts          /dev/pts     devpts  defaults          0       0
+tmpfs           /dev/shm     tmpfs   defaults          0       0" > etc/fstab
+
+  mkdir etc/init.d
+ 
+  cp ../../files/etc/init.d/rc.init etc/init.d/
+  cp -a ../../files/etc/conf.d etc
+  
+  cd usr/share
+  mkdir kmap
+  
+  cd ../..
+  
+  status
+  
+  cd ..
+}
+
+# generate initramfs for live boot.
+gen_rootfs()
+{
+  echo -e -n "[$YELLOW Working $NORMAL] Generating initramfs."
+  
+  cd rootfs
+  find . -print | cpio -o -H newc | gzip -9 > ../rootfs.gz 2>&1
+  status
+  
+  cd ..
+  
+}
+
+# setup bootloader for iso
+do_isolinux()
+{
+  echo -e "[$YELLOW Working $NORMAL] Setting up bootloader."
+  if [ ! -d $syslinuxdir ]; then
+    echo -n "Unpacking $syslinuxdir..."
+    tar -xzf $syslinux > /dev/null 2>&1
+    status
+  fi
+
+  if [ ! -d cdroot ]; then
+    mkdir cdroot
+    mkdir cdroot/boot
+  fi
+  
+  cd $syslinuxdir
+	
+  echo -n "Copying isolinux files to iso..."
+  cp bios/core/isolinux.bin ../cdroot
+  cp bios/com32/elflink/ldlinux/ldlinux.c32 ../cdroot 
+  status
+	
+  echo -n "Generating isolinux config..."
+  echo "Generic Linux build $endtag with little GNU software! 8)
+Press <enter> to boot" > ../cdroot/display.txt
+  echo "display display.txt
+default linux
+label linux
+    kernel /boot/vmlinuz
+    append initrd=/boot/rootfs.gz rw root=/dev/null vga=788
+implicit 0
+prompt 1
+timeout 5" > ../cdroot/isolinux.cfg
+  status
+
+  cd ..
+}
+
+# generate complete iso ready for boot
+gen_iso() 
+{
+  
+  echo -e -n "[$YELLOW Working $NORMAL] Generating bootable ISO image."
+	
+  cp rootfs.gz cdroot/boot
+  cp $kerneldir/arch/x86/boot/bzImage cdroot/boot/vmlinuz
+	
+  genisoimage -R -o ../generic-linux-$endtag.iso -b isolinux.bin \
+  -c boot.cat -no-emul-boot -boot-load-size 4 \
+  -V "Generic Linux" -input-charset iso8859-1 -boot-info-table cdroot > /dev/null 2>&1
+  status
+   
+}
+
+# Move to src dir
 cd src
 
-echo -e "[$YELLOW Working $NORMAL] Downloading Linux kernel"
-if [ ! -f $kernel ]; then
-  wget https://www.kernel.org/pub/linux/kernel/v4.x/$kernel > /dev/null 2>&1
-fi
-status
-
-echo -e "[$YELLOW Working $NORMAL] Downloading base utilities"
-if [ ! -f $busybox ]; then
-  wget http://busybox.net/downloads/$busybox > /dev/null 2>&1
-fi
-status
-
-echo -e "[$YELLOW Working $NORMAL] Downloading bootloader"
-if [ ! -f $syslinux ]; then
-wget https://www.kernel.org/pub/linux/utils/boot/syslinux/$syslinux > /dev/null 2>&1
-fi
-status
-
-echo -e "[$YELLOW Working $NORMAL] Unpacking Linux kernel"
-if [ ! -d $kerneldir ]; then
-  tar -xzf $kernel > /dev/null 2>&1
-  status
-fi
-
-echo -e "[$YELLOW Working $NORMAL] Configuring Linux kernel"
-cd $kerneldir
-#cp ../../kernel-4.1.4-standard.conf .config
-status
-
-echo -e "[$YELLOW Working $NORMAL] Building Linux kernel"
-#make bzImage -j5
-status
-
-echo -e "[$YELLOW Working $NORMAL] Building kernel modules"
-#make modules -j5
-status
-#make INSTALL_MOD_PATH=`pwd`/_pkg modules_install
-
-cd ..
-
-echo -e "[$YELLOW Working $NORMAL] Unpacking & building root system"
-if [ ! -d $busyboxdir ]; then
-  echo "Unpacking..."
-  tar -xjf $busybox > /dev/null 2>&1
-  status
-fi
-
-echo "Configuring..."
-cd $busyboxdir
-cp ../../$busyboxdir.conf .config
-status
-
-echo "Building..."
-make -j5
-status
-
-echo "Installing..."
-mkdir ../rootfs
-make install
-status
-echo "Finishing up..."
-chmod 4755 _install/bin/busybox
-cp -a _install/* ../rootfs
-status
-
-echo -e "[$YELLOW Working $NORMAL] Configuring root filesystem"
-echo "Linking init..."
-cd ../rootfs
-ln -s bin/busybox init
-status
-
+# call functions
+get_files
+do_kernel
+do_busybox
+do_libc
+configure_system
+gen_rootfs
+do_isolinux
+gen_iso
