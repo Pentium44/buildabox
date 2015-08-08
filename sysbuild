@@ -271,9 +271,12 @@ do_libc()
   
   echo -n "Cleaning files..."
   #strip -v lib/* > /dev/null 2>&1
+  mkdir ../rootfs/lib64
+  cd ../rootfs/lib64
+  ln -s ../lib/ld-2.22.so ld-linux-x86-64.so.2
   status
-  
-  cd ..
+
+  cd ../..
 }
 
 # Configure rootfs for live boot
