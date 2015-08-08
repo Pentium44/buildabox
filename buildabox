@@ -32,6 +32,11 @@ YELLOW="\e[1;33m"
 MAGENTA="\e[0;35m"
 CYAN="\e[0;36m"
 
+if [ "$(id -u)" != "0" ]; then
+  echo "[$RED Error $NORMAL] This script needs to be executed by root."
+  exit 1
+fi
+
 # function to check if errors occurred
 status()
 {
@@ -302,8 +307,8 @@ configure_system()
    media/{cdrom,flash,usbdisk}
   
   echo -n "Filling /dev..."
-  cp ../$busyboxdir/examples/bootfloppy/mkdevs.sh bin/mkdev
-  ./bin/mkdev dev > /dev/null 2>&1
+  cp ../../files/mkdevs bin/mkdevs
+  ./bin/mkdevs dev > /dev/null 2>&1
   status
   
   echo -n "Configuring networking..."
