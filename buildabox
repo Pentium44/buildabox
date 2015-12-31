@@ -12,13 +12,13 @@ libcmirror="http://ftp.gnu.org/gnu/libc"
 endtag=`date +"%Y%m%d-%H%M"`
 
 # Source code filenames
-kernel="linux-4.1.4.tar.gz"
+kernel="linux-4.3.tar.xz"
 syslinux="syslinux-6.03.tar.gz"
 busybox="busybox-1.23.2.tar.bz2"
 libc="glibc-2.22.tar.gz"
 
 # Source directory names
-kerneldir=${kernel//.tar.gz}
+kerneldir=${kernel//.tar.xz}
 busyboxdir=${busybox//.tar.bz2}
 syslinuxdir=${syslinux//.tar.gz}
 libcdir=${libc//.tar.gz}
@@ -76,6 +76,7 @@ esac
 # Download source code
 get_files()
 {
+  echo " " # This is used to keep next echo from moving around
   echo -e "[$YELLOW Working $NORMAL] Downloading needed files..."
   if [ ! -f $kernel ]; then
 	echo -n "$kernel..."
@@ -110,7 +111,7 @@ do_kernel()
   echo -e "[$YELLOW Working $NORMAL] Unpacking & building Linux kernel"
   if [ ! -d $kerneldir ]; then
     echo -n "Unpacking..."
-    tar -xzf $kernel > /dev/null 2>&1
+    tar xf $kernel > /dev/null 2>&1
     status
   fi
 
@@ -121,19 +122,19 @@ do_kernel()
 
   echo -n "Building kernel base..."
   if [ "$verbose" == "1" ]; then
-    make bzImage -j5
+    make bzImage -j20
     status
   else
-    make bzImage -j5 > /dev/null 2>&1
+    make bzImage -j20 > /dev/null 2>&1
     status
   fi
 
   #echo -n "Building kernel modules..."
   #if [ "$verbose" == "1" ]; then
-  #  make modules -j5
+  #  make modules -j20
   #  status
   #else
-  #  make modules -j5 > /dev/null 2>&1
+  #  make modules -j20 > /dev/null 2>&1
   #  status
   #fi
   
@@ -151,7 +152,7 @@ do_busybox()
   echo -e "[$YELLOW Working $NORMAL] Unpacking & building system utilities"
   if [ ! -d $busyboxdir ]; then
     echo -n "Unpacking..."
-    tar -xjf $busybox > /dev/null 2>&1
+    tar xf $busybox > /dev/null 2>&1
     status
   fi
 
@@ -162,10 +163,10 @@ do_busybox()
 
   echo -n "Building..."
   if [ "$verbose" == "1" ]; then 
-    make -j5
+    make -j20
     status
   else
-    make -j5 > /dev/null 2>&1
+    make -j20 > /dev/null 2>&1
     status
   fi
   
@@ -196,7 +197,7 @@ do_libc()
   echo -e "[$YELLOW Working $NORMAL] Configuring & building libc"
   if [ ! -d $libcdir ]; then
     echo "Unpacking..."
-    tar -xzf $libc > /dev/null 2>&1
+    tar xf $libc > /dev/null 2>&1
     status
   fi 
   
@@ -233,7 +234,7 @@ do_libc()
     make install-bootstrap-headers=yes install-headers
     status
     
-    make -j5 csu/subdir_lib
+    make -j20 csu/subdir_lib
     status
     
     install csu/crt1.o csu/crti.o csu/crtn.o `pwd`/../rootfs/lib
@@ -244,13 +245,13 @@ do_libc()
 	-nostartfiles -shared -x c /dev/null -o `pwd`/../rootfs/lib/libc.so
     status
     
-    make -j5 
+    make -j20
     status
   else
     make install-bootstrap-headers=yes install-headers > /dev/null 2>&1
     status_silent
     
-    make -j5 csu/subdir_lib > /dev/null 2>&1
+    make -j20 csu/subdir_lib > /dev/null 2>&1
     status_silent
     
     install csu/crt1.o csu/crti.o csu/crtn.o `pwd`/../rootfs/lib > /dev/null 2>&1
@@ -261,7 +262,7 @@ do_libc()
 	-nostartfiles -shared -x c /dev/null -o `pwd`/../rootfs/lib/libc.so 2>&1
     status_silent
     
-    make -j5 > /dev/null 2>&1
+    make -j20 > /dev/null 2>&1
     status
   fi
   
@@ -363,7 +364,7 @@ tty7" > etc/securetty
   echo "Generic Linux $endtag \r \l" > etc/issue
   echo "" >> etc/issue
   
-  echo "Generic Linux distribution created by BuildScript..." > etc/motd
+  echo "Generic Linux distribution built by buildabox..." > etc/motd
 
   echo "[SUID]
 # Allow command to be run by anyone.

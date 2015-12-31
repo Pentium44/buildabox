@@ -45,6 +45,11 @@ echo -n "Configuring network loopback... "
 /sbin/route add 127.0.0.1 lo
 status
 
+# Get eth0 linked up
+echo -n "Prepare $NETINTERFACE... "
+/sbin/ifconfig $NETINTERFACE up > /dev/null
+status
+
 # Start network
 if [ "$NETTYPE" = "dynamic" ] ; then
   echo -n "Starting UDHCPC... "
